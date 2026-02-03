@@ -2,6 +2,10 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {"message": "Python Price Service is Live"}
+
 @app.get("/health")
 async def health_check():
     return {
