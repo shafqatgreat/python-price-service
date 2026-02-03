@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from api.routes.prices import router as price_router
 
 app = FastAPI()
 
@@ -17,3 +18,6 @@ async def health_check():
 @app.get("/api/hello")
 async def hello():
     return {"message": "Hello from Python!"}
+
+
+app.include_router(price_router, prefix="/api")
