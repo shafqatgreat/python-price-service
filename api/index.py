@@ -1,15 +1,11 @@
 from fastapi import FastAPI
+from api.routes import prices
 
 app = FastAPI()
 
-@app.get("/api/health")
-async def health_check():
-    return {
-        "status": "UP",
-        "service": "price-service-python",
-        "message": "Basic FastAPI is running on Vercel"
-    }
+# Include our modular routes
+app.include_router(prices.router, prefix="/api")
 
-@app.get("/api/hello")
-async def hello():
-    return {"message": "Hello from Python!"}
+@app.get("/")
+async def root():
+    return {"message": "Modular Price Scraper API is Live"}
