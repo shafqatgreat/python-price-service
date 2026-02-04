@@ -138,6 +138,8 @@ async def run_carrefour_scraper(target_url: str):
             f"wss://chrome.browserless.io?token={browser_token}"
             f"&--disable-http2" 
             f"&--disable-blink-features=AutomationControlled"
+            f"&stealth=true"
+            f"&--location=asia"  # Forces Browserless to use an Asian data center
         )
 
         try:
