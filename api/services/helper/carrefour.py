@@ -119,73 +119,85 @@ async def scrape_items_to_list(page, category, subcategory, domain_base):
     return items_list
 
 # ----------------- MAIN ORCHESTRATOR -----------------
-
 async def run_carrefour_scraper(target_url: str):
-    # 1. Dynamically determine the base domain
+    log("🚀 Starting Scraper Orchestrator")
+    
     parsed_uri = urlparse(target_url)
     domain_base = f"{parsed_uri.scheme}://{parsed_uri.netloc}"
     
-    # 2. Get your Browserless Token from Vercel Environment Variables
-    # Ensure you have added BROWSERLESS_TOKEN in Vercel Settings
     browser_token = os.getenv("BROWSERLESS_TOKEN")
-    
     if not browser_token:
+        log("❌ ERROR: BROWSERLESS_TOKEN missing")
         raise Exception("BROWSERLESS_TOKEN is not set in environment variables")
 
     all_data = []
 
     async with async_playwright() as p:
-        # Connect to the remote Browserless instance instead of launching locally
-        # This solves the 'Executable doesn't exist' error on Vercel
-        # 1. Add specific flags to the connection URL to disable HTTP/2
-        # We append '&--disable-http2' to the WebSocket string
+        log("🔌 Connecting to Browserless...")
         connection_url = (
             f"wss://chrome.browserless.io?token={browser_token}"
             f"&--disable-http2" 
             f"&--disable-blink-features=AutomationControlled"
         )
 
-        browser = await p.chromium.connect_over_cdp(connection_url)
-        
-        # 2. Set a high-quality User-Agent and Extra Headers in the context
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-            extra_http_headers={
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            }
-        )
-        # Browserless handles the user agent and stealth automatically, 
-        # but we use a context to keep the session clean
-        # context = await browser.new_context()
-        page = await context.new_page()
-
         try:
+            browser = await p.chromium.connect_over_cdp(connection_url)
+            log("✅ Connected to remote browser")
+            
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                extra_http_headers={
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                    "sec-ch-ua": '"Not.A/Brand";v="99", "Chromium";v="121"',
+                    "sec-ch-ua-platform": '"Windows"'
+                }
+            )
+            page = await context.new_page()
+
+            log(f"🌐 Navigating to Main URL: {target_url}")
             if await safe_goto(page, target_url):
-                # Detect category from breadcrumbs
+                log("📖 Main Page Loaded")
+                
+                # Detect category
                 try:
                     cat_el = await page.query_selector('li[data-testid="breadcrumb-item"]:nth-child(2)')
                     category = (await cat_el.inner_text()).strip() if cat_el else "General"
-                except:
+                    log(f"🏷️ Detected Category: {category}")
+                except Exception as e:
+                    log(f"⚠️ Could not detect category: {e}")
                     category = "General"
 
-                # Use derived domain_base for subcategory links
+                # Subcategories
+                log("🔍 Extracting Subcategories...")
                 subcats = await extract_subcategories(page, domain_base)
+                log(f"📂 Found {len(subcats)} subcategories")
 
                 if subcats:
-                    for sub_name, sub_url in subcats:
+                    for i, (sub_name, sub_url) in enumerate(subcats, 1):
+                        log(f"➡️ [{i}/{len(subcats)}] Processing Sub: {sub_name}")
                         if await safe_goto(page, sub_url):
                             data = await scrape_items_to_list(page, category, sub_name, domain_base)
                             all_data.extend(data)
+                            log(f"✅ Scraped {len(data)} items from {sub_name}")
+                        else:
+                            log(f"❌ Failed to load subcategory: {sub_name}")
                 else:
+                    log("➡️ No subcategories found, scraping main page directly")
                     data = await scrape_items_to_list(page, category, "DIRECT", domain_base)
                     all_data.extend(data)
+            else:
+                log("❌ FAILED to load Main URL (Check safe_goto logs)")
+
+        except Exception as e:
+            log(f"💥 CRITICAL ERROR during scrape: {str(e)}")
+            raise e
         finally:
-            # Always close the connection to avoid wasting Browserless minutes
+            log("🔒 Closing browser connection")
             await browser.close()
             
-        return all_data
-
+    log(f"🏁 Scraper finished. Total items collected: {len(all_data)}")
+    return all_data
 async def run_carrefour_scraper_PlaywrightOld(target_url: str):
     # Dynamically determine the base domain (e.g., https://www.carrefour.pk)
     parsed_uri = urlparse(target_url)
