@@ -24,7 +24,7 @@ async def safe_goto(page, url, retries=3):
     for attempt in range(1, retries + 1):
         log(f"🌐 Navigating (attempt {attempt}) → {url}")
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            await page.goto(url, wait_until="networkidle", timeout=45000)
             await human_delay(4, 7)
             if not await is_blocked(page):
                 return True
