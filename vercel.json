@@ -1,11 +1,12 @@
 {
   "regions": ["bom1"],
-  "functions": {
-    "api/**/*.py": {
-      "maxDuration": 60,
-      "memory": 1024
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": { "maxDuration": 60 }
     }
-  },
+  ],
   "routes": [
     {
       "src": "/(.*)",
