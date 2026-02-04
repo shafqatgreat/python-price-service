@@ -17,8 +17,10 @@ async def human_delay(a=2, b=4):
 
 async def is_blocked(page):
     try:
+        # Check specifically for the "Distil" or "Access Denied" text
         content = (await page.content()).lower()
-        return "technical issues at our end" in content or "distil_identification_block" in content
+        # If it finds 'access denied' or 'captcha', it's definitely a block
+        return any(x in content for x in ["access denied", "distil_identification_block", "please verify you are a human"])
     except:
         return False
 
