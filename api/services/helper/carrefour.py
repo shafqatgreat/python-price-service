@@ -4,7 +4,7 @@ import re
 import asyncio
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
-
+import os
 # ----------------- HELPERS -----------------
 
 def log(msg):
@@ -121,6 +121,58 @@ async def scrape_items_to_list(page, category, subcategory, domain_base):
 # ----------------- MAIN ORCHESTRATOR -----------------
 
 async def run_carrefour_scraper(target_url: str):
+    # 1. Dynamically determine the base domain
+    parsed_uri = urlparse(target_url)
+    domain_base = f"{parsed_uri.scheme}://{parsed_uri.netloc}"
+    
+    # 2. Get your Browserless Token from Vercel Environment Variables
+    # Ensure you have added BROWSERLESS_TOKEN in Vercel Settings
+    browser_token = os.getenv("BROWSERLESS_TOKEN")
+    
+    if not browser_token:
+        raise Exception("BROWSERLESS_TOKEN is not set in environment variables")
+
+    all_data = []
+
+    async with async_playwright() as p:
+        # 3. Connect to the remote Browserless instance instead of launching locally
+        # This solves the 'Executable doesn't exist' error on Vercel
+        browser = await p.chromium.connect_over_cdp(
+            f"wss://chrome.browserless.io?token={browser_token}"
+        )
+        
+        # Browserless handles the user agent and stealth automatically, 
+        # but we use a context to keep the session clean
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        try:
+            if await safe_goto(page, target_url):
+                # Detect category from breadcrumbs
+                try:
+                    cat_el = await page.query_selector('li[data-testid="breadcrumb-item"]:nth-child(2)')
+                    category = (await cat_el.inner_text()).strip() if cat_el else "General"
+                except:
+                    category = "General"
+
+                # Use derived domain_base for subcategory links
+                subcats = await extract_subcategories(page, domain_base)
+
+                if subcats:
+                    for sub_name, sub_url in subcats:
+                        if await safe_goto(page, sub_url):
+                            data = await scrape_items_to_list(page, category, sub_name, domain_base)
+                            all_data.extend(data)
+                else:
+                    data = await scrape_items_to_list(page, category, "DIRECT", domain_base)
+                    all_data.extend(data)
+        finally:
+            # Always close the connection to avoid wasting Browserless minutes
+            await browser.close()
+            
+        return all_data
+
+async def run_carrefour_scraper_PlaywrightOld(target_url: str):
     # Dynamically determine the base domain (e.g., https://www.carrefour.pk)
     parsed_uri = urlparse(target_url)
     domain_base = f"{parsed_uri.scheme}://{parsed_uri.netloc}"
