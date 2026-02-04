@@ -19,7 +19,8 @@ async def get_item_price(url: str, item_name: str = "Unknown"):
 @router.get("/scrape")
 async def scrape_endpoint(category: str = "Fruits", subcategory: str = "Fresh"):
     # Target URL (Adjust as needed)
-    target_url = "https://www.carrefour.pk/mafpak/en/c/FPAK1660000"
+    # target_url = "https://www.carrefour.pk/mafpak/en/c/FPAK1660000"
+    target_url = "https://www.carrefour.pk/mafpak/en/n/c/clp_FPAK1600000"
     
     try:
         data = await run_carrefour_scraper(target_url);
