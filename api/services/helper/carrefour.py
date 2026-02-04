@@ -157,7 +157,7 @@ async def run_carrefour_scraper(target_url: str):
         )
         # Browserless handles the user agent and stealth automatically, 
         # but we use a context to keep the session clean
-        context = await browser.new_context()
+        # context = await browser.new_context()
         page = await context.new_page()
 
         try:
