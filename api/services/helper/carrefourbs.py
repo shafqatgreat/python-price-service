@@ -84,43 +84,48 @@ async def extract_subcategories(page, domain_base):
 async def scrape_items_to_list(page, category, subcategory, domain_base):
     log(f"🛒 Scraping items | {subcategory or 'DIRECT'}")
     
-    # 1. TRIGGER LOAD: Wait for item container and do a fast scroll
     try:
-        await page.wait_for_selector('div[class*="max-w-[134px]"]', timeout=8000)
-        # Scroll halfway to trigger lazy-load grid
+        # Wait for the item container using the partial class from your HTML
+        await page.wait_for_selector('div[class*="relative w-[134px]"]', timeout=8000)
         await page.evaluate("window.scrollTo(0, 2000)")
         await asyncio.sleep(1.5)
     except:
         return []
 
-    # 2. GET HTML & PARSE WITH BEAUTIFUL SOUP
     html_content = await page.content()
     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # Target containers based on the 'items panel.txt' patterns
-    cards = soup.find_all('div', class_=lambda x: x and 'max-w-[134px]' in x)
+    # Target the main item container found in your file [cite: 1, 4, 8, 11]
+    cards = soup.find_all('div', class_=lambda x: x and 'relative w-[134px]' in x)
     items_list = []
 
     for card in cards:
         try:
-            # Name
-            name_span = card.find('div', class_='line-clamp-2')
-            name = name_span.get_text(strip=True) if name_span else None
+            # 1. NAME - Found in a span inside a div with line-clamp-2 [cite: 4, 7, 11, 15]
+            name_el = card.find('div', class_=lambda x: x and 'line-clamp-2' in x)
+            name = name_el.get_text(strip=True) if name_el else None
             if not name: continue
 
-            # Price
-            p_main = card.find('div', class_='text-lg font-bold')
-            p_dec = card.find('div', class_='text-2xs font-bold')
-            price_val = f"{p_main.text.strip()}{p_dec.text.strip()}" if p_main else "0"
+            # 2. PRICE - Target the specific classes you identified 
+            # We look for the 'text-lg leading-5 font-bold' pattern
+            p_main = card.find('div', class_=lambda x: x and 'text-lg' in x and 'font-bold' in x)
+            # The decimals are in a separate div 
+            p_dec = card.find('div', class_=lambda x: x and 'text-2xs' in x and 'font-bold' in x)
+            
+            price_main = p_main.get_text(strip=True) if p_main else "0"
+            price_decimal = p_dec.get_text(strip=True) if p_dec else ".00"
+            # Remove any non-numeric characters like commas from the main price
+            price_val = f"{price_main.replace(',', '')}{price_decimal}"
 
-            # Quantity
-            big_qty_el = card.find('div', class_='text-gray-500 truncate')
-            big_qty = big_qty_el.get_text(strip=True) if big_qty_el else ""
-            unit_qty = big_qty.split('-')[0].strip() if '-' in big_qty else big_qty
+            # 3. QUANTITY/SIZE - Extracted from the name if no separate label exists [cite: 4, 7, 11, 15]
+            # Your HTML shows sizes like "200 ml" directly in the name
+            size_match = re.search(r'(\d+\s*(ml|g|kg|l|pack))', name.lower())
+            unit_qty = size_match.group(1) if size_match else "1 Unit"
+            big_qty = name # Using full name as reference for bulk calculation
 
             bulk_price, base_unit = normalize_to_bulk_price(price_val, unit_qty)
 
-            # URL
+            # 4. URL [cite: 3, 7, 11, 14]
             link_el = card.find('a', href=re.compile(r'/p/'))
             item_url = domain_base + link_el['href'] if link_el else ""
 
@@ -136,11 +141,11 @@ async def scrape_items_to_list(page, category, subcategory, domain_base):
                 "Base_Unit": base_unit,
                 "Item_URL": item_url
             })
-        except:
+        except Exception as e:
+            log(f"⚠️ Skipping item due to error: {e}")
             continue
             
     return items_list
-
 # ----------------- MAIN ORCHESTRATOR -----------------
 
 async def run_carrefour_scraper(target_url: str):
