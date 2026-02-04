@@ -24,7 +24,7 @@ async def safe_goto(page, url, retries=3):
     for attempt in range(1, retries + 1):
         log(f"🌐 Navigating (attempt {attempt}) → {url}")
         try:
-            await page.goto(url, timeout=60000)
+            await page.goto(url, wait_until="networkidle", timeout=60000)
             await human_delay(4, 7)
             if not await is_blocked(page):
                 return True
@@ -135,12 +135,26 @@ async def run_carrefour_scraper(target_url: str):
     all_data = []
 
     async with async_playwright() as p:
-        # 3. Connect to the remote Browserless instance instead of launching locally
+        # Connect to the remote Browserless instance instead of launching locally
         # This solves the 'Executable doesn't exist' error on Vercel
-        browser = await p.chromium.connect_over_cdp(
+        # 1. Add specific flags to the connection URL to disable HTTP/2
+        # We append '&--disable-http2' to the WebSocket string
+        connection_url = (
             f"wss://chrome.browserless.io?token={browser_token}"
+            f"&--disable-http2" 
+            f"&--disable-blink-features=AutomationControlled"
         )
+
+        browser = await p.chromium.connect_over_cdp(connection_url)
         
+        # 2. Set a high-quality User-Agent and Extra Headers in the context
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            }
+        )
         # Browserless handles the user agent and stealth automatically, 
         # but we use a context to keep the session clean
         context = await browser.new_context()
