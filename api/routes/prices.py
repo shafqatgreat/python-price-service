@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from api.services.scraper import scrape_online_price
 from api.schemas.price import PriceResponse
-from api.services.helper.carrefour_bs import run_carrefour_scraper
+from api.services.helper.carrefourbs import run_carrefour_scraper
 
 router = APIRouter()
 
