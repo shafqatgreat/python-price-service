@@ -19,5 +19,4 @@ async def health_check():
 async def hello():
     return {"message": "Hello from Python!"}
 
-
 app.include_router(price_router, prefix="/api")
