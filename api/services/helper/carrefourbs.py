@@ -44,47 +44,65 @@ async def safe_goto(page, url, retries=2):
 # ----------------- EXTRACTION LOGIC -----------------
 def normalize_to_bulk_price(price_str, unit_qty_str, item_name=""):
     try:
-        # 1. Clean the price (handle commas and currency symbols)
-        price = float(re.sub(r'[^\d.]', '', price_str))
+        # 1. Clean the price (remove commas and currency markers)
+        clean_price_str = re.sub(r'[^\d.]', '', price_str.replace(',', ''))
+        price = float(clean_price_str)
         
-        # Combine name and qty string to catch "Pack of X" or "X x Yml"
+        # Combine name and qty string to catch all variations
         search_text = f"{item_name} {unit_qty_str}".lower()
         
-        # 2. Check for Multipliers (e.g., "Pack of 27", "24x200ml", "12 pcs")
-        # Patterns: "pack of 27", "x27", "27 x", "27 pack"
-        multiplier_match = re.search(r'(?:pack of|x)\s*(\d+)|(\d+)\s*(?:pack|pcs|x)', search_text)
+        # 2. Extract Multiplier (Pack Size)
+        # Patterns for: "pack of 12", "12 pcs", "12 units", "12x200ml", "200mlx12", "12 x 1l"
+        multi_patterns = [
+            r'pack of\s*(\d+)',            # "pack of 12"
+            r'(\d+)\s*pcs',                # "12 pcs" or "12pcs"
+            r'(\d+)\s*units',              # "12 units"
+            r'(\d+)\s*packs',              # "12 packs"
+            r'x\s*(\d+)(?!\s*[a-z])',      # "x 12" (not followed by a unit like x 12g)
+            r'(?<![0-9])(\d+)\s*x\s*(?![0-9])', # "12 x" (standalone x)
+            r'(\d+)\s*x\s*\d+\s*[a-z]+',   # "12 x 200ml"
+            r'\d+\s*[a-z]+\s*x\s*(\d+)'    # "200ml x 12"
+        ]
         
-        if multiplier_match:
-            # Extract whichever group matched
-            multiplier = float(multiplier_match.group(1) or multiplier_match.group(2))
-            if multiplier > 0:
-                return (price / multiplier), "1 Unit"
+        multiplier = 1
+        found_pack = False
+        for pattern in multi_patterns:
+            match = re.search(pattern, search_text)
+            if match:
+                # Get the first captured group that isn't None
+                val = next((g for g in match.groups() if g is not None), None)
+                if val:
+                    multiplier = float(val)
+                    found_pack = True
+                    break
+        
+        # If it's a multi-pack, calculate price per single item in that pack
+        if found_pack and multiplier > 1:
+            return (price / multiplier), "1 Unit"
 
-        # 3. Standard Weight/Volume Conversion (If not a multi-pack)
-        # Pattern: Value (number) + Unit (letters)
-        match = re.search(r'(\d+(?:\.\d+)?)\s*([a-zA-Z]+)', unit_qty_str.lower())
+        # 3. Standard Weight/Volume Normalization (Only if no pack multiplier was found)
+        weight_match = re.search(r'(\d+(?:\.\d+)?)\s*(g|gm|grams|kg|ml|l|liter|litre|lt)', search_text)
         
-        if not match:
-            return price, "Unit"
+        if weight_match:
+            value = float(weight_match.group(1))
+            unit = weight_match.group(2)
             
-        value = float(match.group(1))
-        unit = match.group(2)
-        
-        if value == 0: return price, "Unit"
+            if value > 0:
+                if unit in ['g', 'gm', 'grams']:
+                    return (price / value) * 1000, "1 KG"
+                elif unit in ['ml', 'milliliter']:
+                    return (price / value) * 1000, "1 Litre"
+                elif unit in ['kg', 'l', 'liter', 'litre', 'lt']:
+                    # Already in base unit (1kg or 1L)
+                    return (price / value), f"1 {unit.upper().replace('LT', 'L')[:1]}"
 
-        if unit in ['g', 'gm', 'grams']:
-            return (price / value) * 1000, "1 KG"
-        elif unit in ['ml', 'milliliter', 'ml']:
-            return (price / value) * 1000, "1 Litre"
-        elif unit in ['kg', 'l', 'liter']:
-            return (price / value), f"1 {unit.upper()}"
-            
         # Default fallback
         return price, "Unit"
     except Exception as e:
-        print(f"Error in normalization: {e}")
-        return 0.0, "Unknown"
+        # In case of any error, return the original price to avoid returning 0
+        return price if 'price' in locals() else 0.0, "Unit"    
     
+
 def normalize_to_bulk_price_v1(price_str, unit_qty_str):
     try:
         price = float(re.sub(r'[^\d.]', '', price_str))
