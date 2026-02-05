@@ -42,8 +42,50 @@ async def safe_goto(page, url, retries=2):
     return False
 
 # ----------------- EXTRACTION LOGIC -----------------
+def normalize_to_bulk_price(price_str, unit_qty_str, item_name=""):
+    try:
+        # 1. Clean the price (handle commas and currency symbols)
+        price = float(re.sub(r'[^\d.]', '', price_str))
+        
+        # Combine name and qty string to catch "Pack of X" or "X x Yml"
+        search_text = f"{item_name} {unit_qty_str}".lower()
+        
+        # 2. Check for Multipliers (e.g., "Pack of 27", "24x200ml", "12 pcs")
+        # Patterns: "pack of 27", "x27", "27 x", "27 pack"
+        multiplier_match = re.search(r'(?:pack of|x)\s*(\d+)|(\d+)\s*(?:pack|pcs|x)', search_text)
+        
+        if multiplier_match:
+            # Extract whichever group matched
+            multiplier = float(multiplier_match.group(1) or multiplier_match.group(2))
+            if multiplier > 0:
+                return (price / multiplier), "1 Unit"
 
-def normalize_to_bulk_price(price_str, unit_qty_str):
+        # 3. Standard Weight/Volume Conversion (If not a multi-pack)
+        # Pattern: Value (number) + Unit (letters)
+        match = re.search(r'(\d+(?:\.\d+)?)\s*([a-zA-Z]+)', unit_qty_str.lower())
+        
+        if not match:
+            return price, "Unit"
+            
+        value = float(match.group(1))
+        unit = match.group(2)
+        
+        if value == 0: return price, "Unit"
+
+        if unit in ['g', 'gm', 'grams']:
+            return (price / value) * 1000, "1 KG"
+        elif unit in ['ml', 'milliliter', 'ml']:
+            return (price / value) * 1000, "1 Litre"
+        elif unit in ['kg', 'l', 'liter']:
+            return (price / value), f"1 {unit.upper()}"
+            
+        # Default fallback
+        return price, "Unit"
+    except Exception as e:
+        print(f"Error in normalization: {e}")
+        return 0.0, "Unknown"
+    
+def normalize_to_bulk_price_v1(price_str, unit_qty_str):
     try:
         price = float(re.sub(r'[^\d.]', '', price_str))
         match = re.search(r'(\d+(?:\.\d+)?)\s*([a-zA-Z]+)', unit_qty_str.lower())
